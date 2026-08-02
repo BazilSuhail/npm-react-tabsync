@@ -1,7 +1,7 @@
 {
-  "name": "react-tabsync",
-  "version": "0.1.0",
-  "description": "React hook for real-time cross-tab state synchronization using BroadcastChannel API with localStorage fallback. SSR-safe for Next.js.",
+  "name": "use-tab-sync",
+  "version": "1.0.0",
+  "description": "Zero deps. Minimal. Cross-tab state sync for React.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",

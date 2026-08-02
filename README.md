@@ -1,67 +1,67 @@
-# react-tabsync
+# use-tab-sync
 
-React hook for real-time cross-tab state synchronization. Keeps state perfectly synced across all browser tabs using BroadcastChannel API with localStorage fallback.
+**Zero deps. Minimal. Cross-tab state sync for React.**
 
-## Install
+One hook. All tabs. Instant sync. No server. No boilerplate.
 
 ```bash
-npm install react-tabsync
+npm install use-tab-sync
 ```
 
-## Usage
-
 ```tsx
-import { useTabState } from 'react-tabsync';
+import { useTabSync } from 'use-tab-sync';
 
 function Cart() {
-  const [items, setItems] = useTabState('cart', []);
+  const [items, setItems] = useTabSync('cart', []);
 
   return (
     <button onClick={() => setItems(prev => [...prev, { id: Date.now() }])}>
-      Add Item ({items.length})
+      Add ({items.length})
     </button>
   );
 }
 ```
 
-Open two tabs. Click "Add Item" in one — the other updates instantly.
+Open two tabs. Click in one — the other updates instantly.
+
+## Why
+
+| Without | With |
+|---------|------|
+| BroadcastChannel setup | 1 line |
+| localStorage fallback | 1 line |
+| SSR hydration handling | 1 line |
+| Self-loop prevention | Automatic |
+| Functional updates | Built-in |
+
+~50 lines of boilerplate → 1 hook call.
 
 ## API
 
-### `useTabState<T>(key, defaultValue, options?)`
+### `useTabSync<T>(key, defaultValue, options?)`
 
-Drop-in replacement for `useState` that syncs across tabs.
+| Param | Type | Default |
+|-------|------|---------|
+| `key` | `string` | — |
+| `defaultValue` | `T` | — |
+| `options.channel` | `string` | `'use-tab-sync'` |
+| `options.prefix` | `string` | `'rts:'` |
 
-| Param | Type | Description |
-|-------|------|-------------|
-| `key` | `string` | Unique state identifier across tabs |
-| `defaultValue` | `T` | Initial value if nothing stored |
-| `options` | `object` | Optional config |
-
-**Options:**
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `channel` | `string` | `'react-tabsync'` | BroadcastChannel name for isolation |
-| `prefix` | `string` | `'rts:'` | localStorage key prefix |
-
-**Returns:** `[state, setState]` — identical to `useState`.
+Returns `[state, setState]` — same as `useState`.
 
 ## Features
 
-- **Zero dependencies** — only React as peer dependency
-- **Tree-shakable** — ESM + CJS output
-- **SSR-safe** — works with Next.js App Router via `useSyncExternalStore`
-- **Functional updates** — `setState(prev => prev + 1)` works
-- **Self-loop prevention** — sender tab ignores its own broadcasts
-- **TypeScript** — full generic support
+- **Zero dependencies** — React only
+- **Tree-shakable** — ESM + CJS
+- **SSR-safe** — Next.js App Router compatible
+- **TypeScript** — full generics
 
-## How It Works
+## How
 
-1. State is stored in `localStorage` (persists across reloads)
-2. Changes are broadcast via `BroadcastChannel` (instant, same-origin)
-3. Fallback to `storage` events for older browsers
-4. Server renders a safe default, client hydrates from storage
+1. `localStorage` for persistence
+2. `BroadcastChannel` for instant sync
+3. `storage` event fallback for older browsers
+4. `useSyncExternalStore` for SSR safety
 
 ## License
 

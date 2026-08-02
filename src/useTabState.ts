@@ -5,9 +5,9 @@ import { readStorage, writeStorage } from './internal/storage';
 import type { SetValue, UseTabStateOptions, TabSyncMessage } from './types';
 
 const DEFAULT_PREFIX = 'rts:';
-const DEFAULT_CHANNEL = 'react-tabsync';
+const DEFAULT_CHANNEL = 'use-tab-sync';
 
-export function useTabState<T>(
+export function useTabSync<T>(
   key: string,
   defaultValue: T,
   options: UseTabStateOptions = {}
