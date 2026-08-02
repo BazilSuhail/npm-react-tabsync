@@ -1,0 +1,13 @@
+src/
+tests/
+.git/
+.github/
+node_modules/
+tsconfig.json
+tsup.config.ts
+vitest.config.ts
+.gitignore
+*.log
+.DS_Store
+coverage/
+.turbo/
