@@ -40,14 +40,93 @@ Open two tabs. Click in one — the other updates instantly.
 
 ### `useTabSync<T>(key, defaultValue, options?)`
 
-| Param | Type | Default |
-|-------|------|---------|
-| `key` | `string` | — |
-| `defaultValue` | `T` | — |
-| `options.channel` | `string` | `'use-tab-sync'` |
-| `options.prefix` | `string` | `'rts:'` |
+Drop-in replacement for `useState` that syncs across tabs.
 
-Returns `[state, setState]` — same as `useState`.
+```tsx
+const [state, setState] = useTabSync('key', defaultValue);
+```
+
+**Options:**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `channel` | `string` | `'use-tab-sync'` | BroadcastChannel namespace |
+| `prefix` | `string` | `'rts:'` | localStorage key prefix |
+| `persist` | `boolean` | `true` | Persist across page reloads |
+| `sync` | `(keyof T)[]` | `undefined` | Selective field sync |
+| `serializer` | `{ serialize, deserialize }` | JSON | Custom serialization |
+
+### `useTabSyncReducer(reducer, initialState, key, options?)`
+
+Cross-tab reducer pattern — dispatch actions that sync across all tabs.
+
+```tsx
+import { useTabSyncReducer } from 'use-tab-sync';
+
+function reducer(state: string[], action: { type: string; item?: string }) {
+  switch (action.type) {
+    case 'add': return [...state, action.item!];
+    case 'clear': return [];
+    default: return state;
+  }
+}
+
+function Cart() {
+  const [items, dispatch] = useTabSyncReducer(reducer, [], 'cart');
+
+  return (
+    <button onClick={() => dispatch({ type: 'add', item: 'Shoe' })}>
+      Add Item
+    </button>
+  );
+}
+```
+
+## Options
+
+### Selective Sync
+
+Only sync specific fields — other fields stay local.
+
+```tsx
+const [user, setUser] = useTabSync('user', { name: 'John', localPref: 'x' }, {
+  sync: ['name'] // only 'name' syncs across tabs
+});
+```
+
+Remote updates **merge** into local state — they don't replace it.
+
+### Custom Serializer
+
+Handle non-JSON types (Date, Map, Set, etc).
+
+```tsx
+const [date, setDate] = useTabSync('lastSeen', new Date(), {
+  serializer: {
+    serialize: (d) => d.toISOString(),
+    deserialize: (s) => new Date(s)
+  }
+});
+```
+
+### Ephemeral State
+
+Sync across tabs without persisting to localStorage.
+
+```tsx
+const [hovered, setHovered] = useTabSync<string | null>('hovered', null, {
+  persist: false
+});
+```
+
+### Channel Namespacing
+
+Isolate different features to prevent cross-talk.
+
+```tsx
+const [theme, setTheme] = useTabSync('theme', 'light', { channel: 'settings' });
+const [cart, setCart] = useTabSync('cart', [], { channel: 'shop' });
+```
 
 ## Features
 
@@ -55,6 +134,8 @@ Returns `[state, setState]` — same as `useState`.
 - **Tree-shakable** — ESM + CJS
 - **SSR-safe** — Next.js App Router compatible
 - **TypeScript** — full generics
+- **Functional updates** — `setState(prev => prev + 1)`
+- **Self-loop prevention** — sender ignores own broadcasts
 
 ## How
 

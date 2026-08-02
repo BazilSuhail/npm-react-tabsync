@@ -1,2 +1,8 @@
 export { useTabSync } from './useTabState';
-export type { UseTabStateOptions, SetValue } from './types';
+export { useTabSyncReducer } from './useTabSyncReducer';
+export type {
+  UseTabSyncOptions,
+  UseTabSyncReducerOptions,
+  Serializer,
+  SetValue,
+} from './types';
