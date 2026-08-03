@@ -1,11 +1,14 @@
 export type SetValue<T> = T | ((prev: T) => T);
 
+export type ConflictStrategy<T> = 'lastWriteWins' | 'merge' | ((local: T, remote: T) => T);
+
 export interface TabSyncMessage {
   type: 'update';
   tabId: string;
   key: string;
   value: string;
   timestamp: number;
+  tabOrder: number;
 }
 
 export interface Serializer<T> {
@@ -24,6 +27,8 @@ export interface UseTabSyncOptions<T> {
   sync?: (keyof T)[];
   /** Custom serializer for non-JSON types */
   serializer?: Serializer<T>;
+  /** Conflict resolution strategy. Default: 'lastWriteWins' */
+  conflict?: ConflictStrategy<T>;
 }
 
 export interface UseTabSyncReducerOptions {
@@ -33,6 +38,8 @@ export interface UseTabSyncReducerOptions {
   prefix?: string;
   /** Persist to localStorage. Default: true */
   persist?: boolean;
+  /** Conflict resolution strategy. Default: 'lastWriteWins' */
+  conflict?: ConflictStrategy<unknown>;
 }
 
 export interface TabSyncChannel {

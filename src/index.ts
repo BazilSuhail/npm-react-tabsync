@@ -5,4 +5,5 @@ export type {
   UseTabSyncReducerOptions,
   Serializer,
   SetValue,
+  ConflictStrategy,
 } from './types';

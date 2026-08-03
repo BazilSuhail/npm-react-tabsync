@@ -55,6 +55,7 @@ const [state, setState] = useTabSync('key', defaultValue);
 | `persist` | `boolean` | `true` | Persist across page reloads |
 | `sync` | `(keyof T)[]` | `undefined` | Selective field sync |
 | `serializer` | `{ serialize, deserialize }` | JSON | Custom serialization |
+| `conflict` | `'lastWriteWins' \| 'merge' \| (local, remote) => T` | `'lastWriteWins'` | Conflict resolution |
 
 ### `useTabSyncReducer(reducer, initialState, key, options?)`
 
@@ -128,6 +129,36 @@ const [theme, setTheme] = useTabSync('theme', 'light', { channel: 'settings' });
 const [cart, setCart] = useTabSync('cart', [], { channel: 'shop' });
 ```
 
+### Conflict Resolution
+
+Control how simultaneous updates from multiple tabs are resolved.
+
+```tsx
+// Default: last write wins (timestamp + tab order)
+const [state, setState] = useTabSync('key', value, {
+  conflict: 'lastWriteWins'
+});
+
+// Shallow merge objects
+const [settings, setSettings] = useTabSync('settings', defaults, {
+  conflict: 'merge'
+});
+
+// Custom resolver
+const [data, setData] = useTabSync('data', initial, {
+  conflict: (local, remote) => {
+    // Keep the version with more array items
+    return (local?.length ?? 0) > (remote?.length ?? 0) ? local : remote;
+  }
+});
+```
+
+**How it works:**
+- Each update includes a timestamp + random tab order
+- `lastWriteWins`: higher timestamp wins; ties broken by tab order
+- `merge`: shallow merge remote into local
+- Custom: your function decides which version to keep
+
 ## Features
 
 - **Zero dependencies** — React only
@@ -136,6 +167,7 @@ const [cart, setCart] = useTabSync('cart', [], { channel: 'shop' });
 - **TypeScript** — full generics
 - **Functional updates** — `setState(prev => prev + 1)`
 - **Self-loop prevention** — sender ignores own broadcasts
+- **Conflict resolution** — lastWriteWins, merge, or custom
 
 ## How
 

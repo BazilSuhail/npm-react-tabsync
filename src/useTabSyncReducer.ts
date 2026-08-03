@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useReducer } from 'react';
 import { getTabId } from './internal/id';
 import { getChannel, closeChannel } from './internal/channel';
 import { readStorage, writeStorage, removeStorage } from './internal/storage';
-import type { UseTabSyncReducerOptions, TabSyncMessage } from './types';
+import { resolveConflict } from './internal/conflict';
+import type { UseTabSyncReducerOptions, TabSyncMessage, ConflictStrategy } from './types';
 
 const DEFAULT_PREFIX = 'rts:';
 const DEFAULT_CHANNEL = 'use-tab-sync';
@@ -33,11 +34,14 @@ export function useTabSyncReducer<S, A>(
     channel: channelName = DEFAULT_CHANNEL,
     prefix = DEFAULT_PREFIX,
     persist = true,
+    conflict = 'lastWriteWins',
   } = options;
 
   const storageKey = `${prefix}${key}`;
   const tabIdRef = useRef(getTabId());
+  const tabOrderRef = useRef(Math.floor(Math.random() * 1000000));
   const isSender = useRef(false);
+  const localTimestamp = useRef(Date.now());
 
   // Initialize state from localStorage or initialState
   const initState = (): S => {
@@ -71,8 +75,20 @@ export function useTabSyncReducer<S, A>(
 
       try {
         const incoming = JSON.parse(msg.value) as S;
-        // Directly set state to incoming value (full replacement for reducer)
-        dispatch({ type: '__INIT_TAB', state: incoming });
+
+        // Apply conflict resolution
+        const resolved = resolveConflict(
+          stateRef.current,
+          incoming,
+          localTimestamp.current,
+          msg.timestamp,
+          tabOrderRef.current,
+          msg.tabOrder,
+          conflict as ConflictStrategy<S>
+        );
+
+        dispatch({ type: '__INIT_TAB', state: resolved });
+        localTimestamp.current = Date.now();
       } catch {
         // ignore malformed data
       }
@@ -82,7 +98,7 @@ export function useTabSyncReducer<S, A>(
     return () => {
       ch.removeEventListener(handleMessage);
     };
-  }, [key, channelName, prefix]);
+  }, [key, channelName, prefix, conflict]);
 
   // Clean up channel on unmount
   useEffect(() => {
@@ -107,6 +123,7 @@ export function useTabSyncReducer<S, A>(
 
       // Update local state
       dispatch({ type: '__SYNC_TAB', payload: action });
+      localTimestamp.current = Date.now();
 
       // Persist to localStorage (if enabled)
       if (persist) {
@@ -122,7 +139,8 @@ export function useTabSyncReducer<S, A>(
         tabId: tabIdRef.current,
         key,
         value: JSON.stringify(newState),
-        timestamp: Date.now(),
+        timestamp: localTimestamp.current,
+        tabOrder: tabOrderRef.current,
       };
       ch.postMessage(msg);
 

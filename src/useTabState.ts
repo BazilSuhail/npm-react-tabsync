@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { getTabId } from './internal/id';
 import { getChannel, closeChannel } from './internal/channel';
 import { readStorage, writeStorage, removeStorage } from './internal/storage';
-import type { SetValue, UseTabSyncOptions, TabSyncMessage } from './types';
+import { resolveConflict } from './internal/conflict';
+import type { SetValue, UseTabSyncOptions, TabSyncMessage, ConflictStrategy } from './types';
 
 const DEFAULT_PREFIX = 'rts:';
 const DEFAULT_CHANNEL = 'use-tab-sync';
@@ -40,14 +41,19 @@ export function useTabSync<T>(
     persist = true,
     sync: syncFields,
     serializer,
+    conflict = 'lastWriteWins',
   } = options;
 
   const storageKey = `${prefix}${key}`;
   const tabId = useRef(getTabId());
+  const tabOrder = useRef(Math.floor(Math.random() * 1000000));
   const isSender = useRef(false);
 
   const serialize = serializer?.serialize ?? defaultSerialize;
   const deserialize = serializer?.deserialize ?? defaultDeserialize;
+
+  // Track local timestamp for conflict resolution
+  const localTimestamp = useRef(Date.now());
 
   // Initialize state from localStorage or defaultValue
   const [state, setState] = useState<T>(() => {
@@ -79,17 +85,30 @@ export function useTabSync<T>(
       try {
         const incoming = deserialize(msg.value) as T;
 
+        let resolved: T;
+
         if (syncFields && typeof incoming === 'object' && incoming !== null && typeof stateRef.current === 'object' && stateRef.current !== null) {
           // Selective sync: merge only specified fields
-          const merged = mergeFields(
+          resolved = mergeFields(
             stateRef.current as Record<string, unknown>,
             incoming as Record<string, unknown>,
             syncFields as string[]
           ) as T;
-          setState(merged);
         } else {
-          setState(incoming);
+          // Apply conflict resolution
+          resolved = resolveConflict(
+            stateRef.current,
+            incoming,
+            localTimestamp.current,
+            msg.timestamp,
+            tabOrder.current,
+            msg.tabOrder,
+            conflict as ConflictStrategy<T>
+          );
         }
+
+        setState(resolved);
+        localTimestamp.current = Date.now();
       } catch {
         // ignore malformed data
       }
@@ -99,7 +118,7 @@ export function useTabSync<T>(
     return () => {
       ch.removeEventListener(handleMessage);
     };
-  }, [key, channelName, prefix, deserialize, syncFields]);
+  }, [key, channelName, prefix, deserialize, syncFields, conflict]);
 
   // Clean up channel on unmount
   useEffect(() => {
@@ -126,6 +145,7 @@ export function useTabSync<T>(
 
       // Update local state
       setState(resolved);
+      localTimestamp.current = Date.now();
 
       // Determine what to broadcast and persist
       let broadcastValue: T;
@@ -154,7 +174,8 @@ export function useTabSync<T>(
         tabId: tabId.current,
         key,
         value: serialize(broadcastValue),
-        timestamp: Date.now(),
+        timestamp: localTimestamp.current,
+        tabOrder: tabOrder.current,
       };
       ch.postMessage(msg);
 
