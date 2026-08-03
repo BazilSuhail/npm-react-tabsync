@@ -56,6 +56,7 @@ const [state, setState] = useTabSync('key', defaultValue);
 | `sync` | `(keyof T)[]` | `undefined` | Selective field sync |
 | `serializer` | `{ serialize, deserialize }` | JSON | Custom serialization |
 | `conflict` | `'lastWriteWins' \| 'merge' \| (local, remote) => T` | `'lastWriteWins'` | Conflict resolution |
+| `onSync` | `(event: SyncEvent<T>) => void` | `undefined` | Sync event callback |
 
 ### `useTabSyncReducer(reducer, initialState, key, options?)`
 
@@ -153,11 +154,25 @@ const [data, setData] = useTabSync('data', initial, {
 });
 ```
 
-**How it works:**
-- Each update includes a timestamp + random tab order
-- `lastWriteWins`: higher timestamp wins; ties broken by tab order
-- `merge`: shallow merge remote into local
-- Custom: your function decides which version to keep
+### Sync Events (onSync)
+
+Monitor every sync event for analytics, debugging, or side effects.
+
+```tsx
+const [state, setState] = useTabSync('key', value, {
+  onSync: ({ key, value, direction, tabId, timestamp }) => {
+    console.log(`[${direction}] ${key}:`, value);
+    // direction: 'send' | 'receive'
+    // tabId: the tab that sent the update
+    // timestamp: when the update occurred
+  }
+});
+```
+
+**Use cases:**
+- Analytics: track cross-tab state changes
+- Debugging: log all sync events in development
+- Side effects: trigger actions on specific sync events
 
 ## Features
 
@@ -168,6 +183,8 @@ const [data, setData] = useTabSync('data', initial, {
 - **Functional updates** — `setState(prev => prev + 1)`
 - **Self-loop prevention** — sender ignores own broadcasts
 - **Conflict resolution** — lastWriteWins, merge, or custom
+- **Sync events** — onSync callback for monitoring
+- **Dev warnings** — rapid updates, large payloads
 
 ## How
 

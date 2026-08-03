@@ -2,6 +2,18 @@ export type SetValue<T> = T | ((prev: T) => T);
 
 export type ConflictStrategy<T> = 'lastWriteWins' | 'merge' | ((local: T, remote: T) => T);
 
+export type SyncDirection = 'send' | 'receive';
+
+export interface SyncEvent<T> {
+  key: string;
+  value: T;
+  direction: SyncDirection;
+  tabId: string;
+  timestamp: number;
+}
+
+export type OnSyncCallback<T> = (event: SyncEvent<T>) => void;
+
 export interface TabSyncMessage {
   type: 'update';
   tabId: string;
@@ -29,6 +41,8 @@ export interface UseTabSyncOptions<T> {
   serializer?: Serializer<T>;
   /** Conflict resolution strategy. Default: 'lastWriteWins' */
   conflict?: ConflictStrategy<T>;
+  /** Callback fired on every sync event (send/receive) */
+  onSync?: OnSyncCallback<T>;
 }
 
 export interface UseTabSyncReducerOptions {
@@ -40,6 +54,8 @@ export interface UseTabSyncReducerOptions {
   persist?: boolean;
   /** Conflict resolution strategy. Default: 'lastWriteWins' */
   conflict?: ConflictStrategy<unknown>;
+  /** Callback fired on every sync event (send/receive) */
+  onSync?: OnSyncCallback<unknown>;
 }
 
 export interface TabSyncChannel {

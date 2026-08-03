@@ -3,6 +3,7 @@ import { getTabId } from './internal/id';
 import { getChannel, closeChannel } from './internal/channel';
 import { readStorage, writeStorage, removeStorage } from './internal/storage';
 import { resolveConflict } from './internal/conflict';
+import { warnRapidUpdates, checkPayloadSize } from './internal/dev';
 import type { SetValue, UseTabSyncOptions, TabSyncMessage, ConflictStrategy } from './types';
 
 const DEFAULT_PREFIX = 'rts:';
@@ -42,12 +43,15 @@ export function useTabSync<T>(
     sync: syncFields,
     serializer,
     conflict = 'lastWriteWins',
+    onSync,
   } = options;
 
   const storageKey = `${prefix}${key}`;
   const tabId = useRef(getTabId());
   const tabOrder = useRef(Math.floor(Math.random() * 1000000));
   const isSender = useRef(false);
+  const onSyncRef = useRef(onSync);
+  onSyncRef.current = onSync;
 
   const serialize = serializer?.serialize ?? defaultSerialize;
   const deserialize = serializer?.deserialize ?? defaultDeserialize;
@@ -88,14 +92,12 @@ export function useTabSync<T>(
         let resolved: T;
 
         if (syncFields && typeof incoming === 'object' && incoming !== null && typeof stateRef.current === 'object' && stateRef.current !== null) {
-          // Selective sync: merge only specified fields
           resolved = mergeFields(
             stateRef.current as Record<string, unknown>,
             incoming as Record<string, unknown>,
             syncFields as string[]
           ) as T;
         } else {
-          // Apply conflict resolution
           resolved = resolveConflict(
             stateRef.current,
             incoming,
@@ -109,6 +111,15 @@ export function useTabSync<T>(
 
         setState(resolved);
         localTimestamp.current = Date.now();
+
+        // Fire onSync callback
+        onSyncRef.current?.({
+          key,
+          value: resolved,
+          direction: 'receive',
+          tabId: msg.tabId,
+          timestamp: msg.timestamp,
+        });
       } catch {
         // ignore malformed data
       }
@@ -147,10 +158,13 @@ export function useTabSync<T>(
       setState(resolved);
       localTimestamp.current = Date.now();
 
+      // Dev warnings
+      warnRapidUpdates(key);
+      checkPayloadSize(key, resolved);
+
       // Determine what to broadcast and persist
       let broadcastValue: T;
       if (syncFields && typeof resolved === 'object' && resolved !== null) {
-        // Selective sync: only broadcast specified fields
         const partial = {} as Record<string, unknown>;
         for (const field of syncFields) {
           partial[field as string] = (resolved as Record<string, unknown>)[field as string];
@@ -178,6 +192,15 @@ export function useTabSync<T>(
         tabOrder: tabOrder.current,
       };
       ch.postMessage(msg);
+
+      // Fire onSync callback
+      onSyncRef.current?.({
+        key,
+        value: resolved,
+        direction: 'send',
+        tabId: tabId.current,
+        timestamp: localTimestamp.current,
+      });
 
       // Reset sender flag after a tick
       setTimeout(() => {

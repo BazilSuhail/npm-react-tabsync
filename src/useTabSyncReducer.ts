@@ -3,6 +3,7 @@ import { getTabId } from './internal/id';
 import { getChannel, closeChannel } from './internal/channel';
 import { readStorage, writeStorage, removeStorage } from './internal/storage';
 import { resolveConflict } from './internal/conflict';
+import { warnRapidUpdates, checkPayloadSize } from './internal/dev';
 import type { UseTabSyncReducerOptions, TabSyncMessage, ConflictStrategy } from './types';
 
 const DEFAULT_PREFIX = 'rts:';
@@ -35,6 +36,7 @@ export function useTabSyncReducer<S, A>(
     prefix = DEFAULT_PREFIX,
     persist = true,
     conflict = 'lastWriteWins',
+    onSync,
   } = options;
 
   const storageKey = `${prefix}${key}`;
@@ -42,6 +44,8 @@ export function useTabSyncReducer<S, A>(
   const tabOrderRef = useRef(Math.floor(Math.random() * 1000000));
   const isSender = useRef(false);
   const localTimestamp = useRef(Date.now());
+  const onSyncRef = useRef(onSync);
+  onSyncRef.current = onSync;
 
   // Initialize state from localStorage or initialState
   const initState = (): S => {
@@ -89,6 +93,15 @@ export function useTabSyncReducer<S, A>(
 
         dispatch({ type: '__INIT_TAB', state: resolved });
         localTimestamp.current = Date.now();
+
+        // Fire onSync callback
+        onSyncRef.current?.({
+          key,
+          value: resolved,
+          direction: 'receive',
+          tabId: msg.tabId,
+          timestamp: msg.timestamp,
+        });
       } catch {
         // ignore malformed data
       }
@@ -125,6 +138,10 @@ export function useTabSyncReducer<S, A>(
       dispatch({ type: '__SYNC_TAB', payload: action });
       localTimestamp.current = Date.now();
 
+      // Dev warnings
+      warnRapidUpdates(key);
+      checkPayloadSize(key, newState);
+
       // Persist to localStorage (if enabled)
       if (persist) {
         const serialized = JSON.stringify(newState);
@@ -143,6 +160,15 @@ export function useTabSyncReducer<S, A>(
         tabOrder: tabOrderRef.current,
       };
       ch.postMessage(msg);
+
+      // Fire onSync callback
+      onSyncRef.current?.({
+        key,
+        value: newState,
+        direction: 'send',
+        tabId: tabIdRef.current,
+        timestamp: localTimestamp.current,
+      });
 
       // Reset sender flag after a tick
       setTimeout(() => {

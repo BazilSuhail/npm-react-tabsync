@@ -6,4 +6,7 @@ export type {
   Serializer,
   SetValue,
   ConflictStrategy,
+  SyncEvent,
+  SyncDirection,
+  OnSyncCallback,
 } from './types';
