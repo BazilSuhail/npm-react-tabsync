@@ -61,11 +61,12 @@ export function useTabSync<T>(
   onExpireRef.current = onExpire;
   const onSizeExceededRef = useRef(onSizeExceeded);
   onSizeExceededRef.current = onSizeExceeded;
+  const defaultValueRef = useRef(defaultValue);
+  defaultValueRef.current = defaultValue;
 
   const serialize = serializer?.serialize ?? defaultSerialize;
   const deserialize = serializer?.deserialize ?? defaultDeserialize;
 
-  // Track local timestamp for conflict resolution
   const localTimestamp = useRef(Date.now());
 
   // Initialize state from localStorage or defaultValue
@@ -85,7 +86,6 @@ export function useTabSync<T>(
     return defaultValue;
   });
 
-  // Keep a ref to current state for functional updates
   const stateRef = useRef(state);
   stateRef.current = state;
 
@@ -99,19 +99,16 @@ export function useTabSync<T>(
         const parsed = parseStoredValue<T>(stored);
         if (parsed?.expired) {
           removeStorage(storageKey);
-          setState(defaultValue);
+          setState(defaultValueRef.current);
           onExpireRef.current?.(key, parsed.value);
         }
       }
     };
 
-    // Check immediately
     checkExpiration();
-
-    // Set up interval to check periodically
     const interval = setInterval(checkExpiration, Math.min(ttl, 60000));
     return () => clearInterval(interval);
-  }, [ttl, persist, storageKey, defaultValue, key]);
+  }, [ttl, persist, storageKey, key]);
 
   // Subscribe to cross-tab updates via BroadcastChannel
   useEffect(() => {
@@ -122,9 +119,8 @@ export function useTabSync<T>(
       if (msg.key !== key) return;
       if (msg.tabId === tabId.current) return;
 
-      // Check TTL on incoming message
       if (msg.expiresAt !== undefined && Date.now() > msg.expiresAt) {
-        return; // Skip expired messages
+        return;
       }
 
       try {
@@ -153,7 +149,6 @@ export function useTabSync<T>(
         setState(resolved);
         localTimestamp.current = Date.now();
 
-        // Fire onSync callback
         onSyncRef.current?.({
           key,
           value: resolved,
@@ -172,14 +167,12 @@ export function useTabSync<T>(
     };
   }, [key, channelName, prefix, deserialize, syncFields, conflict]);
 
-  // Clean up channel on unmount
   useEffect(() => {
     return () => {
       closeChannel(channelName, prefix);
     };
   }, [channelName, prefix]);
 
-  // Clean up localStorage if persist is false on unmount
   useEffect(() => {
     return () => {
       if (!persist) {
@@ -195,14 +188,11 @@ export function useTabSync<T>(
           ? (value as (prev: T) => T)(stateRef.current)
           : value;
 
-      // Update local state
       setState(resolved);
       localTimestamp.current = Date.now();
 
-      // Dev warnings
       warnRapidUpdates(key);
 
-      // Size check
       if (maxSize !== undefined && onSizeExceededRef.current) {
         try {
           const size = new Blob([JSON.stringify(resolved)]).size;
@@ -214,7 +204,6 @@ export function useTabSync<T>(
         }
       }
 
-      // Determine what to broadcast and persist
       let broadcastValue: T;
       if (syncFields && typeof resolved === 'object' && resolved !== null) {
         const partial = {} as Record<string, unknown>;
@@ -226,13 +215,11 @@ export function useTabSync<T>(
         broadcastValue = resolved;
       }
 
-      // Persist to localStorage (if enabled)
       if (persist) {
         const serialized = ttl ? createStoredValue(resolved, ttl) : serialize(resolved);
         writeStorage(storageKey, serialized);
       }
 
-      // Broadcast to other tabs
       isSender.current = true;
       const ch = getChannel(channelName, prefix);
       const msg: TabSyncMessage = {
@@ -246,7 +233,6 @@ export function useTabSync<T>(
       };
       ch.postMessage(msg);
 
-      // Fire onSync callback
       onSyncRef.current?.({
         key,
         value: resolved,
@@ -255,7 +241,6 @@ export function useTabSync<T>(
         timestamp: localTimestamp.current,
       });
 
-      // Reset sender flag after a tick
       setTimeout(() => {
         isSender.current = false;
       }, 0);

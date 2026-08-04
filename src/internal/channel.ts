@@ -33,7 +33,8 @@ class BroadcastChannelAdapter implements TabSyncChannel {
 class StorageEventAdapter implements TabSyncChannel {
   private prefix: string;
   private listeners = new Set<(msg: TabSyncMessage) => void>();
-  private handler: ((e: StorageEvent) => void) | null = null;
+  private storageHandler: ((e: StorageEvent) => void) | null = null;
+  private customHandler: ((e: Event) => void) | null = null;
 
   constructor(prefix: string) {
     this.prefix = prefix;
@@ -42,7 +43,6 @@ class StorageEventAdapter implements TabSyncChannel {
   postMessage(msg: TabSyncMessage): void {
     const key = `${this.prefix}:${msg.key}`;
     writeStorageRaw(key, JSON.stringify(msg));
-    // Dispatch custom event so same-tab listeners pick it up
     window.dispatchEvent(
       new CustomEvent('react-tabsync', { detail: msg })
     );
@@ -52,7 +52,7 @@ class StorageEventAdapter implements TabSyncChannel {
     this.listeners.add(listener);
 
     if (this.listeners.size === 1) {
-      this.handler = (e: StorageEvent) => {
+      this.storageHandler = (e: StorageEvent) => {
         if (e.key?.startsWith(this.prefix + ':') && e.newValue) {
           try {
             const msg = JSON.parse(e.newValue) as TabSyncMessage;
@@ -62,28 +62,35 @@ class StorageEventAdapter implements TabSyncChannel {
           }
         }
       };
-      window.addEventListener('storage', this.handler);
+      window.addEventListener('storage', this.storageHandler);
 
-      // Also listen to custom event for same-tab
-      window.addEventListener('react-tabsync', ((e: CustomEvent) => {
+      this.customHandler = ((e: CustomEvent) => {
         this.listeners.forEach((fn) => fn(e.detail));
-      }) as EventListener);
+      }) as EventListener;
+      window.addEventListener('react-tabsync', this.customHandler);
     }
   }
 
   removeEventListener(listener: (msg: TabSyncMessage) => void): void {
     this.listeners.delete(listener);
-    if (this.listeners.size === 0 && this.handler) {
-      window.removeEventListener('storage', this.handler);
-      this.handler = null;
+    if (this.listeners.size === 0) {
+      this.cleanup();
     }
   }
 
   close(): void {
     this.listeners.clear();
-    if (this.handler) {
-      window.removeEventListener('storage', this.handler);
-      this.handler = null;
+    this.cleanup();
+  }
+
+  private cleanup(): void {
+    if (this.storageHandler) {
+      window.removeEventListener('storage', this.storageHandler);
+      this.storageHandler = null;
+    }
+    if (this.customHandler) {
+      window.removeEventListener('react-tabsync', this.customHandler);
+      this.customHandler = null;
     }
   }
 }
@@ -97,7 +104,6 @@ function writeStorageRaw(key: string, value: string): void {
   }
 }
 
-// Channel cache to avoid creating duplicate channels
 const channelCache = new Map<string, TabSyncChannel>();
 
 export function getChannel(

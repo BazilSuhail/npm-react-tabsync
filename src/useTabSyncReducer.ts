@@ -55,8 +55,9 @@ export function useTabSyncReducer<S, A>(
   onExpireRef.current = onExpire;
   const onSizeExceededRef = useRef(onSizeExceeded);
   onSizeExceededRef.current = onSizeExceeded;
+  const initialStateRef = useRef(initialState);
+  initialStateRef.current = initialState;
 
-  // Initialize state from localStorage or initialState
   const initState = (): S => {
     if (!persist) return initialState;
     const stored = readStorage(storageKey);
@@ -76,7 +77,6 @@ export function useTabSyncReducer<S, A>(
   const wrappedReducer = createSyncReducer(reducer);
   const [state, dispatch] = useReducer(wrappedReducer, initialState, initState);
 
-  // Keep a ref to current state
   const stateRef = useRef(state);
   stateRef.current = state;
 
@@ -90,7 +90,7 @@ export function useTabSyncReducer<S, A>(
         const parsed = parseStoredValue<S>(stored);
         if (parsed?.expired) {
           removeStorage(storageKey);
-          dispatch({ type: '__INIT_TAB', state: initialState });
+          dispatch({ type: '__INIT_TAB', state: initialStateRef.current });
           onExpireRef.current?.(key, parsed.value);
         }
       }
@@ -99,9 +99,8 @@ export function useTabSyncReducer<S, A>(
     checkExpiration();
     const interval = setInterval(checkExpiration, Math.min(ttl, 60000));
     return () => clearInterval(interval);
-  }, [ttl, persist, storageKey, initialState, key]);
+  }, [ttl, persist, storageKey, key]);
 
-  // Subscribe to cross-tab updates via BroadcastChannel
   useEffect(() => {
     const ch = getChannel(channelName, prefix);
 
@@ -110,7 +109,6 @@ export function useTabSyncReducer<S, A>(
       if (msg.key !== key) return;
       if (msg.tabId === tabIdRef.current) return;
 
-      // Check TTL on incoming message
       if (msg.expiresAt !== undefined && Date.now() > msg.expiresAt) {
         return;
       }
@@ -118,7 +116,6 @@ export function useTabSyncReducer<S, A>(
       try {
         const incoming = JSON.parse(msg.value) as S;
 
-        // Apply conflict resolution
         const resolved = resolveConflict(
           stateRef.current,
           incoming,
@@ -132,7 +129,6 @@ export function useTabSyncReducer<S, A>(
         dispatch({ type: '__INIT_TAB', state: resolved });
         localTimestamp.current = Date.now();
 
-        // Fire onSync callback
         onSyncRef.current?.({
           key,
           value: resolved,
@@ -151,14 +147,12 @@ export function useTabSyncReducer<S, A>(
     };
   }, [key, channelName, prefix, conflict]);
 
-  // Clean up channel on unmount
   useEffect(() => {
     return () => {
       closeChannel(channelName, prefix);
     };
   }, [channelName, prefix]);
 
-  // Clean up localStorage if persist is false on unmount
   useEffect(() => {
     return () => {
       if (!persist) {
@@ -169,17 +163,13 @@ export function useTabSyncReducer<S, A>(
 
   const syncDispatch = useCallback(
     (action: A) => {
-      // Apply reducer locally
       const newState = reducer(stateRef.current, action);
 
-      // Update local state
       dispatch({ type: '__SYNC_TAB', payload: action });
       localTimestamp.current = Date.now();
 
-      // Dev warnings
       warnRapidUpdates(key);
 
-      // Size check
       if (maxSize !== undefined && onSizeExceededRef.current) {
         try {
           const size = new Blob([JSON.stringify(newState)]).size;
@@ -191,13 +181,11 @@ export function useTabSyncReducer<S, A>(
         }
       }
 
-      // Persist to localStorage (if enabled)
       if (persist) {
         const serialized = ttl ? createStoredValue(newState, ttl) : JSON.stringify(newState);
         writeStorage(storageKey, serialized);
       }
 
-      // Broadcast to other tabs
       isSender.current = true;
       const ch = getChannel(channelName, prefix);
       const msg: TabSyncMessage = {
@@ -211,7 +199,6 @@ export function useTabSyncReducer<S, A>(
       };
       ch.postMessage(msg);
 
-      // Fire onSync callback
       onSyncRef.current?.({
         key,
         value: newState,
@@ -220,7 +207,6 @@ export function useTabSyncReducer<S, A>(
         timestamp: localTimestamp.current,
       });
 
-      // Reset sender flag after a tick
       setTimeout(() => {
         isSender.current = false;
       }, 0);
