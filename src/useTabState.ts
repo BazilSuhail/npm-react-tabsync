@@ -3,7 +3,8 @@ import { getTabId } from './internal/id';
 import { getChannel, closeChannel } from './internal/channel';
 import { readStorage, writeStorage, removeStorage } from './internal/storage';
 import { resolveConflict } from './internal/conflict';
-import { warnRapidUpdates, checkPayloadSize } from './internal/dev';
+import { warnRapidUpdates } from './internal/dev';
+import { createStoredValue, parseStoredValue } from './internal/ttl';
 import type { SetValue, UseTabSyncOptions, TabSyncMessage, ConflictStrategy } from './types';
 
 const DEFAULT_PREFIX = 'rts:';
@@ -44,6 +45,10 @@ export function useTabSync<T>(
     serializer,
     conflict = 'lastWriteWins',
     onSync,
+    ttl,
+    onExpire,
+    maxSize,
+    onSizeExceeded,
   } = options;
 
   const storageKey = `${prefix}${key}`;
@@ -52,6 +57,10 @@ export function useTabSync<T>(
   const isSender = useRef(false);
   const onSyncRef = useRef(onSync);
   onSyncRef.current = onSync;
+  const onExpireRef = useRef(onExpire);
+  onExpireRef.current = onExpire;
+  const onSizeExceededRef = useRef(onSizeExceeded);
+  onSizeExceededRef.current = onSizeExceeded;
 
   const serialize = serializer?.serialize ?? defaultSerialize;
   const deserialize = serializer?.deserialize ?? defaultDeserialize;
@@ -64,10 +73,13 @@ export function useTabSync<T>(
     if (!persist) return defaultValue;
     const stored = readStorage(storageKey);
     if (stored !== null) {
-      try {
-        return deserialize(stored);
-      } catch {
-        return defaultValue;
+      const parsed = parseStoredValue<T>(stored);
+      if (parsed) {
+        if (parsed.expired) {
+          removeStorage(storageKey);
+          return defaultValue;
+        }
+        return parsed.value;
       }
     }
     return defaultValue;
@@ -77,6 +89,30 @@ export function useTabSync<T>(
   const stateRef = useRef(state);
   stateRef.current = state;
 
+  // TTL expiration check
+  useEffect(() => {
+    if (!ttl || !persist) return;
+
+    const checkExpiration = () => {
+      const stored = readStorage(storageKey);
+      if (stored !== null) {
+        const parsed = parseStoredValue<T>(stored);
+        if (parsed?.expired) {
+          removeStorage(storageKey);
+          setState(defaultValue);
+          onExpireRef.current?.(key, parsed.value);
+        }
+      }
+    };
+
+    // Check immediately
+    checkExpiration();
+
+    // Set up interval to check periodically
+    const interval = setInterval(checkExpiration, Math.min(ttl, 60000));
+    return () => clearInterval(interval);
+  }, [ttl, persist, storageKey, defaultValue, key]);
+
   // Subscribe to cross-tab updates via BroadcastChannel
   useEffect(() => {
     const ch = getChannel(channelName, prefix);
@@ -85,6 +121,11 @@ export function useTabSync<T>(
       if (msg.type !== 'update') return;
       if (msg.key !== key) return;
       if (msg.tabId === tabId.current) return;
+
+      // Check TTL on incoming message
+      if (msg.expiresAt !== undefined && Date.now() > msg.expiresAt) {
+        return; // Skip expired messages
+      }
 
       try {
         const incoming = deserialize(msg.value) as T;
@@ -160,7 +201,18 @@ export function useTabSync<T>(
 
       // Dev warnings
       warnRapidUpdates(key);
-      checkPayloadSize(key, resolved);
+
+      // Size check
+      if (maxSize !== undefined && onSizeExceededRef.current) {
+        try {
+          const size = new Blob([JSON.stringify(resolved)]).size;
+          if (size > maxSize) {
+            onSizeExceededRef.current(key, size, maxSize);
+          }
+        } catch {
+          // ignore
+        }
+      }
 
       // Determine what to broadcast and persist
       let broadcastValue: T;
@@ -176,7 +228,7 @@ export function useTabSync<T>(
 
       // Persist to localStorage (if enabled)
       if (persist) {
-        const serialized = serialize(resolved);
+        const serialized = ttl ? createStoredValue(resolved, ttl) : serialize(resolved);
         writeStorage(storageKey, serialized);
       }
 
@@ -190,6 +242,7 @@ export function useTabSync<T>(
         value: serialize(broadcastValue),
         timestamp: localTimestamp.current,
         tabOrder: tabOrder.current,
+        expiresAt: ttl ? Date.now() + ttl : undefined,
       };
       ch.postMessage(msg);
 
@@ -207,7 +260,7 @@ export function useTabSync<T>(
         isSender.current = false;
       }, 0);
     },
-    [key, storageKey, channelName, prefix, persist, serialize, syncFields]
+    [key, storageKey, channelName, prefix, persist, serialize, syncFields, ttl, maxSize]
   );
 
   return [state, setValue];

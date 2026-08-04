@@ -36,6 +36,14 @@ Open two tabs. Click in one — the other updates instantly.
 
 ~50 lines of boilerplate → 1 hook call.
 
+## Hooks
+
+| Hook | Purpose |
+|------|---------|
+| `useTabSync` | Cross-tab state sync (BroadcastChannel + localStorage) |
+| `useTabSyncReducer` | Cross-tab reducer pattern |
+| `useTabStorage` | localStorage-only with TTL (no cross-tab sync) |
+
 ## API
 
 ### `useTabSync<T>(key, defaultValue, options?)`
@@ -57,6 +65,10 @@ const [state, setState] = useTabSync('key', defaultValue);
 | `serializer` | `{ serialize, deserialize }` | JSON | Custom serialization |
 | `conflict` | `'lastWriteWins' \| 'merge' \| (local, remote) => T` | `'lastWriteWins'` | Conflict resolution |
 | `onSync` | `(event: SyncEvent<T>) => void` | `undefined` | Sync event callback |
+| `ttl` | `number` | `undefined` | Time-to-live in ms |
+| `onExpire` | `(key, value) => void` | `undefined` | Expiration callback |
+| `maxSize` | `number` | `undefined` | Max payload size in bytes |
+| `onSizeExceeded` | `(key, size, limit) => void` | `undefined` | Size exceeded callback |
 
 ### `useTabSyncReducer(reducer, initialState, key, options?)`
 
@@ -80,6 +92,28 @@ function Cart() {
     <button onClick={() => dispatch({ type: 'add', item: 'Shoe' })}>
       Add Item
     </button>
+  );
+}
+```
+
+### `useTabStorage<T>(key, defaultValue, options?)`
+
+localStorage-only hook with TTL. No cross-tab sync — use for persistent local state.
+
+```tsx
+import { useTabStorage } from 'use-tab-sync';
+
+function Preferences() {
+  const [theme, setTheme, removeTheme] = useTabStorage('theme', 'light', {
+    ttl: 24 * 60 * 60 * 1000 // 24 hours
+  });
+
+  return (
+    <div>
+      <p>Theme: {theme}</p>
+      <button onClick={() => setTheme('dark')}>Dark</button>
+      <button onClick={removeTheme}>Reset</button>
+    </div>
   );
 }
 ```
@@ -148,8 +182,34 @@ const [settings, setSettings] = useTabSync('settings', defaults, {
 // Custom resolver
 const [data, setData] = useTabSync('data', initial, {
   conflict: (local, remote) => {
-    // Keep the version with more array items
     return (local?.length ?? 0) > (remote?.length ?? 0) ? local : remote;
+  }
+});
+```
+
+### TTL (Time-to-Live)
+
+Auto-expire state after a duration.
+
+```tsx
+const [token, setToken] = useTabSync('auth_token', null, {
+  ttl: 60 * 60 * 1000, // 1 hour
+  onExpire: (key, value) => {
+    console.log(`Token expired: ${key}`);
+    // Redirect to login, etc.
+  }
+});
+```
+
+### Size Limits
+
+Get notified when payloads exceed a threshold.
+
+```tsx
+const [data, setData] = useTabSync('large_data', [], {
+  maxSize: 10 * 1024, // 10KB
+  onSizeExceeded: (key, size, limit) => {
+    console.warn(`${key} is ${(size/1024).toFixed(1)}KB, limit is ${(limit/1024).toFixed(1)}KB`);
   }
 });
 ```
@@ -162,17 +222,9 @@ Monitor every sync event for analytics, debugging, or side effects.
 const [state, setState] = useTabSync('key', value, {
   onSync: ({ key, value, direction, tabId, timestamp }) => {
     console.log(`[${direction}] ${key}:`, value);
-    // direction: 'send' | 'receive'
-    // tabId: the tab that sent the update
-    // timestamp: when the update occurred
   }
 });
 ```
-
-**Use cases:**
-- Analytics: track cross-tab state changes
-- Debugging: log all sync events in development
-- Side effects: trigger actions on specific sync events
 
 ## Features
 
@@ -183,7 +235,9 @@ const [state, setState] = useTabSync('key', value, {
 - **Functional updates** — `setState(prev => prev + 1)`
 - **Self-loop prevention** — sender ignores own broadcasts
 - **Conflict resolution** — lastWriteWins, merge, or custom
-- **Sync events** — onSync callback for monitoring
+- **TTL/expiration** — auto-expire state
+- **Size limits** — warn on large payloads
+- **Sync events** — onSync callback
 - **Dev warnings** — rapid updates, large payloads
 
 ## How

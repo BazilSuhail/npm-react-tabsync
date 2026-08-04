@@ -14,6 +14,10 @@ export interface SyncEvent<T> {
 
 export type OnSyncCallback<T> = (event: SyncEvent<T>) => void;
 
+export type OnExpireCallback<T> = (key: string, value: T) => void;
+
+export type OnSizeExceededCallback = (key: string, size: number, limit: number) => void;
+
 export interface TabSyncMessage {
   type: 'update';
   tabId: string;
@@ -21,6 +25,7 @@ export interface TabSyncMessage {
   value: string;
   timestamp: number;
   tabOrder: number;
+  expiresAt?: number;
 }
 
 export interface Serializer<T> {
@@ -43,6 +48,14 @@ export interface UseTabSyncOptions<T> {
   conflict?: ConflictStrategy<T>;
   /** Callback fired on every sync event (send/receive) */
   onSync?: OnSyncCallback<T>;
+  /** Time-to-live in milliseconds. State expires after this duration. */
+  ttl?: number;
+  /** Callback fired when state expires */
+  onExpire?: OnExpireCallback<T>;
+  /** Maximum payload size in bytes. Warning triggered if exceeded. */
+  maxSize?: number;
+  /** Callback fired when payload exceeds maxSize */
+  onSizeExceeded?: OnSizeExceededCallback;
 }
 
 export interface UseTabSyncReducerOptions {
@@ -56,6 +69,25 @@ export interface UseTabSyncReducerOptions {
   conflict?: ConflictStrategy<unknown>;
   /** Callback fired on every sync event (send/receive) */
   onSync?: OnSyncCallback<unknown>;
+  /** Time-to-live in milliseconds. State expires after this duration. */
+  ttl?: number;
+  /** Callback fired when state expires */
+  onExpire?: OnExpireCallback<unknown>;
+  /** Maximum payload size in bytes. Warning triggered if exceeded. */
+  maxSize?: number;
+  /** Callback fired when payload exceeds maxSize */
+  onSizeExceeded?: OnSizeExceededCallback;
+}
+
+export interface UseTabStorageOptions<T> {
+  /** Storage key prefix. Default: 'rts:' */
+  prefix?: string;
+  /** Custom serializer for non-JSON types */
+  serializer?: Serializer<T>;
+  /** Time-to-live in milliseconds */
+  ttl?: number;
+  /** Callback fired when state expires */
+  onExpire?: OnExpireCallback<T>;
 }
 
 export interface TabSyncChannel {

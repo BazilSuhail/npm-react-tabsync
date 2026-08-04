@@ -1,6 +1,6 @@
 {
   "name": "use-tab-sync",
-  "version": "4.0.0",
+  "version": "5.0.0",
   "description": "Zero deps. Minimal. Cross-tab state sync for React.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
